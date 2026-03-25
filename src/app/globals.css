@@ -1,26 +1,49 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ll-blue: #0c63ff;
+  --ll-purple: #7612fa;
+  --ll-pink: #c109af;
+  --ll-orange: #ff6221;
+  --ll-dark: #1e2020;
+  --ll-darker: #111111;
+  --ll-darkest: #0a0a0a;
+  --ll-surface: #1a1a1a;
+  --ll-surface-light: #252525;
+  --ll-border: rgba(255, 255, 255, 0.08);
+  --ll-text: #e5e5e5;
+  --ll-text-secondary: #a5a5a5;
+  --ll-text-muted: #5d5d5d;
+  --ll-green: #10b981;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background: var(--ll-darkest);
+  color: var(--ll-text);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
 }
