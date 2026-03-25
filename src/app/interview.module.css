@@ -88,15 +88,6 @@
   font-weight: 700;
 }
 
-.sessionItem {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: rgba(118, 18, 250, 0.12);
-}
-
 .sessionIcon {
   width: 34px;
   height: 34px;
@@ -121,6 +112,70 @@
 .sessionMeta {
   font-size: 11px;
   color: var(--ll-text-muted);
+}
+
+/* Sidebar states */
+.sidebarLoading,
+.sidebarEmpty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ll-text-muted);
+}
+
+.sessionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+
+.sessionItem:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sessionItemActive {
+  background: rgba(118, 18, 250, 0.12);
+}
+
+.sessionItemActive:hover {
+  background: rgba(118, 18, 250, 0.16);
+}
+
+.sessionActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.sessionItem:hover .sessionActions {
+  opacity: 1;
+}
+
+.sessionActionBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.sessionActionBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sessionActionBtnDanger:hover {
+  background: rgba(239, 68, 68, 0.2);
 }
 
 .sidebarFooter {

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { QUESTIONS, BLOCKS } from "@/lib/questions";
+import { supabase, DbSession, DbAnswer } from "@/lib/supabase";
 import s from "./interview.module.css";
 
 interface TweakedQuestion {
@@ -24,6 +25,7 @@ interface ChatMessage {
 interface CompletedAnswer {
   number: number;
   question: string;
+  soundbite: string;
   answer: string;
 }
 
@@ -39,7 +41,15 @@ interface SpeechRecognitionInstance {
   start: () => void; stop: () => void;
 }
 
-// Block milestone messages
+interface SessionListItem {
+  id: string;
+  topic: string;
+  status: "in-progress" | "complete";
+  created_at: string;
+  updated_at: string;
+  answer_count: number;
+}
+
 const BLOCK_MILESTONES: Record<number, { title: string; emoji: string; message: string }> = {
   5: { title: "Block 1 Complete", emoji: "🧠", message: "You've mapped how your buyers see the problem. That's the foundation everything else builds on." },
   10: { title: "Block 2 Complete", emoji: "💡", message: "Your contrarian beliefs and unique thinking are captured. This is where the real differentiation lives." },
@@ -51,7 +61,6 @@ function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-// Confetti effect
 function fireConfetti() {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:fixed;inset:0;z-index:9999;pointer-events:none;";
@@ -61,7 +70,6 @@ function fireConfetti() {
   const ctx = canvas.getContext("2d")!;
   const colors = ["#7612fa", "#c109af", "#ff6221", "#10b981", "#eab308", "#fff"];
   const particles: { x: number; y: number; vx: number; vy: number; size: number; color: string; rotation: number; spin: number; life: number }[] = [];
-
   for (let i = 0; i < 80; i++) {
     particles.push({
       x: canvas.width * 0.5 + (Math.random() - 0.5) * 200,
@@ -75,25 +83,17 @@ function fireConfetti() {
       life: 1,
     });
   }
-
   let frame = 0;
   function animate() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     let alive = false;
     for (const p of particles) {
-      p.x += p.vx;
-      p.y += p.vy;
-      p.vy += 0.35;
-      p.vx *= 0.99;
-      p.rotation += p.spin;
-      p.life -= 0.012;
+      p.x += p.vx; p.y += p.vy; p.vy += 0.35; p.vx *= 0.99;
+      p.rotation += p.spin; p.life -= 0.012;
       if (p.life <= 0) continue;
       alive = true;
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate((p.rotation * Math.PI) / 180);
-      ctx.globalAlpha = p.life;
-      ctx.fillStyle = p.color;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate((p.rotation * Math.PI) / 180);
+      ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
       ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
       ctx.restore();
     }
@@ -102,6 +102,20 @@ function fireConfetti() {
     else canvas.remove();
   }
   requestAnimationFrame(animate);
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export default function Home() {
@@ -118,11 +132,16 @@ export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Session persistence
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [savedSessions, setSavedSessions] = useState<SessionListItem[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+
   // Gamification state
   const [streak, setStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [firstTakeCount, setFirstTakeCount] = useState(0);
-  const [refinementCount, setRefinementCount] = useState(0); // per-question refinements
+  const [refinementCount, setRefinementCount] = useState(0);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -141,17 +160,189 @@ export default function Home() {
     }
   }, [inputValue]);
 
+  // Load saved sessions on mount
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  async function loadSessions() {
+    const { data: sessions } = await supabase
+      .from("sessions")
+      .select("id, topic, status, created_at, updated_at")
+      .order("updated_at", { ascending: false });
+
+    if (!sessions) { setSessionsLoaded(true); return; }
+
+    // Get answer counts
+    const { data: counts } = await supabase
+      .from("answers")
+      .select("session_id");
+
+    const countMap: Record<string, number> = {};
+    if (counts) {
+      for (const row of counts) {
+        countMap[row.session_id] = (countMap[row.session_id] || 0) + 1;
+      }
+    }
+
+    setSavedSessions(sessions.map((s) => ({
+      ...s,
+      status: s.status as "in-progress" | "complete",
+      answer_count: countMap[s.id] || 0,
+    })));
+    setSessionsLoaded(true);
+  }
+
+  async function createSession(topicText: string, questions: TweakedQuestion[]): Promise<string | null> {
+    const { data, error } = await supabase
+      .from("sessions")
+      .insert({ topic: topicText, tweaked_questions: questions, current_question: 0 })
+      .select("id")
+      .single();
+
+    if (error || !data) { console.error("Failed to create session:", error); return null; }
+    setSessionId(data.id);
+    loadSessions();
+    return data.id;
+  }
+
+  async function saveAnswer(sessId: string, answer: CompletedAnswer, nextQuestion: number, isComplete: boolean) {
+    await supabase.from("answers").insert({
+      session_id: sessId,
+      question_number: answer.number,
+      question: answer.question,
+      soundbite: answer.soundbite,
+      answer: answer.answer,
+    });
+
+    await supabase.from("sessions").update({
+      current_question: nextQuestion,
+      status: isComplete ? "complete" : "in-progress",
+    }).eq("id", sessId);
+
+    loadSessions();
+  }
+
+  async function loadSession(sessId: string) {
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("id", sessId)
+      .single();
+
+    if (!session) return;
+
+    const { data: answers } = await supabase
+      .from("answers")
+      .select("*")
+      .eq("session_id", sessId)
+      .order("question_number", { ascending: true });
+
+    const sess = session as DbSession;
+    const ans = (answers || []) as DbAnswer[];
+
+    // Restore state
+    setSessionId(sess.id);
+    setTopic(sess.topic);
+    setTweakedQuestions(sess.tweaked_questions);
+    setCurrentQuestion(sess.current_question);
+    setCompletedAnswers(ans.map((a) => ({
+      number: a.question_number,
+      question: a.question,
+      soundbite: a.soundbite,
+      answer: a.answer,
+    })));
+
+    // Rebuild chat messages from saved answers
+    const rebuilt: ChatMessage[] = [];
+    rebuilt.push({ id: crypto.randomUUID(), type: "system", content: `Resumed interview session for "${sess.topic}"` });
+
+    let lastBlock = 0;
+    for (const a of ans) {
+      const qIdx = a.question_number - 1;
+      const blockNum = qIdx < 20 ? QUESTIONS[qIdx].blockNumber : 5;
+      if (blockNum !== lastBlock) {
+        rebuilt.push({ id: crypto.randomUUID(), type: "block-divider", content: BLOCKS[blockNum - 1] });
+        lastBlock = blockNum;
+      }
+      const tq = sess.tweaked_questions[qIdx];
+      if (tq) {
+        rebuilt.push({ id: crypto.randomUUID(), type: "bot", content: tq.question, questionNumber: a.question_number, focus: tq.focus, label: `Question ${a.question_number}` });
+      }
+      rebuilt.push({ id: crypto.randomUUID(), type: "user", content: a.soundbite || "(soundbite not saved)" });
+      rebuilt.push({ id: crypto.randomUUID(), type: "wordsmith", content: a.answer, questionNumber: a.question_number });
+
+      // Add milestone if applicable
+      const milestone = BLOCK_MILESTONES[a.question_number];
+      if (milestone) {
+        rebuilt.push({ id: crypto.randomUUID(), type: "milestone", content: milestone.message, label: `${milestone.emoji} ${milestone.title}` });
+      }
+    }
+
+    if (sess.status === "complete") {
+      setAppState("complete");
+      rebuilt.push({ id: crypto.randomUUID(), type: "milestone", content: "All 20 questions answered! Your expertise has been captured.", label: "🏆 Interview Complete" });
+    } else {
+      setAppState("interviewing");
+      setQuestionState("waiting-for-answer");
+      // Show next question
+      const nextQ = sess.current_question;
+      if (nextQ < 20) {
+        const blockNum = QUESTIONS[nextQ].blockNumber;
+        if (blockNum !== lastBlock) {
+          rebuilt.push({ id: crypto.randomUUID(), type: "block-divider", content: BLOCKS[blockNum - 1] });
+        }
+        const tq = sess.tweaked_questions[nextQ];
+        if (tq) {
+          rebuilt.push({ id: crypto.randomUUID(), type: "bot", content: tq.question, questionNumber: nextQ + 1, focus: tq.focus, label: `Question ${nextQ + 1}` });
+        }
+      }
+    }
+
+    setMessages(rebuilt);
+    setCurrentWordsmith("");
+    setCurrentSoundbite("");
+    setStreak(0);
+    setBestStreak(0);
+    setFirstTakeCount(0);
+    setRefinementCount(0);
+    setInputValue("");
+    setSidebarOpen(false);
+  }
+
+  async function deleteSession(sessId: string) {
+    await supabase.from("sessions").delete().eq("id", sessId);
+    if (sessionId === sessId) {
+      resetToNew();
+    }
+    loadSessions();
+  }
+
+  function resetToNew() {
+    setAppState("topic-entry");
+    setTopic("");
+    setMessages([]);
+    setCompletedAnswers([]);
+    setTweakedQuestions([]);
+    setCurrentQuestion(0);
+    setCurrentWordsmith("");
+    setCurrentSoundbite("");
+    setStreak(0);
+    setBestStreak(0);
+    setFirstTakeCount(0);
+    setRefinementCount(0);
+    setSessionId(null);
+    setInputValue("");
+  }
+
   function addMessage(msg: Omit<ChatMessage, "id">) {
     const newMsg = { ...msg, id: crypto.randomUUID() };
     setMessages((prev) => [...prev, newMsg]);
     return newMsg;
   }
 
-  // Progress percentage (starts at 5% so it never feels like zero)
   const progressPercent = appState === "topic-entry" ? 0 : Math.min(100, 5 + (completedAnswers.length / 20) * 95);
   const completedCount = completedAnswers.length;
-
-  // Current block info
   const currentBlockNum = currentQuestion < 20 ? QUESTIONS[currentQuestion].blockNumber : 5;
   const currentBlockName = BLOCKS[currentBlockNum - 1] || "";
 
@@ -168,6 +359,10 @@ export default function Home() {
       const data = await res.json();
       if (data.tweaked?.length > 0) {
         setTweakedQuestions(data.tweaked);
+        const newSessionId = await createSession(topic.trim(), data.tweaked);
+        if (!newSessionId) {
+          addMessage({ type: "system", content: "Warning: Could not save session to database. Your progress won't persist." });
+        }
         setAppState("interviewing");
         setCurrentQuestion(0);
         setQuestionState("waiting-for-answer");
@@ -203,13 +398,7 @@ export default function Home() {
       setMessages((prev) => prev.filter((m) => m.content !== "Wordsmithing your answer..."));
       setCurrentWordsmith(data.answer);
       setQuestionState("reviewing");
-      // Word count message
-      addMessage({
-        type: "word-count",
-        content: "",
-        soundbiteWords: countWords(soundbite),
-        polishedWords: countWords(data.answer),
-      });
+      addMessage({ type: "word-count", content: "", soundbiteWords: countWords(soundbite), polishedWords: countWords(data.answer) });
       addMessage({ type: "wordsmith", content: data.answer, questionNumber: currentQuestion + 1 });
     } catch {
       setMessages((prev) => prev.filter((m) => m.content !== "Wordsmithing your answer..."));
@@ -249,10 +438,10 @@ export default function Home() {
     fireConfetti();
 
     const q = tweakedQuestions[currentQuestion];
-    const newCompleted = [...completedAnswers, { number: currentQuestion + 1, question: q.question, answer: currentWordsmith }];
+    const newAnswer: CompletedAnswer = { number: currentQuestion + 1, question: q.question, soundbite: currentSoundbite, answer: currentWordsmith };
+    const newCompleted = [...completedAnswers, newAnswer];
     setCompletedAnswers(newCompleted);
 
-    // Streak tracking
     const isFirstTake = refinementCount === 0;
     if (isFirstTake) {
       const newStreak = streak + 1;
@@ -264,18 +453,19 @@ export default function Home() {
     }
 
     const nextQ = currentQuestion + 1;
+    const isComplete = nextQ >= 20;
 
-    // Check for block milestone
-    const milestoneData = BLOCK_MILESTONES[newCompleted.length];
-    if (milestoneData) {
-      addMessage({
-        type: "milestone",
-        content: milestoneData.message,
-        label: `${milestoneData.emoji} ${milestoneData.title}`,
-      });
+    // Save to Supabase
+    if (sessionId) {
+      saveAnswer(sessionId, newAnswer, nextQ, isComplete);
     }
 
-    if (nextQ >= 20) {
+    const milestoneData = BLOCK_MILESTONES[newCompleted.length];
+    if (milestoneData) {
+      addMessage({ type: "milestone", content: milestoneData.message, label: `${milestoneData.emoji} ${milestoneData.title}` });
+    }
+
+    if (isComplete) {
       setAppState("complete");
       addMessage({
         type: "milestone",
@@ -305,16 +495,33 @@ export default function Home() {
     });
   }
 
-  function exportCSV() {
+  function exportCSV(answers?: CompletedAnswer[], csvTopic?: string) {
+    const data = answers || completedAnswers;
+    const name = csvTopic || topic;
     const header = "Question Number,Question,Answer\n";
-    const rows = completedAnswers.map((a) => `${a.number},"${a.question.replace(/"/g, '""')}","${a.answer.replace(/"/g, '""')}"`).join("\n");
+    const rows = data.map((a) => `${a.number},"${a.question.replace(/"/g, '""')}","${a.answer.replace(/"/g, '""')}"`).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `sme-interview-${topic.toLowerCase().replace(/\s+/g, "-")}.csv`;
+    a.download = `sme-interview-${name.toLowerCase().replace(/\s+/g, "-")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function exportSessionCSV(sessId: string, sessTopic: string) {
+    const { data: answers } = await supabase
+      .from("answers")
+      .select("*")
+      .eq("session_id", sessId)
+      .order("question_number", { ascending: true });
+
+    if (!answers || answers.length === 0) return;
+
+    exportCSV(
+      answers.map((a: DbAnswer) => ({ number: a.question_number, question: a.question, soundbite: a.soundbite, answer: a.answer })),
+      sessTopic,
+    );
   }
 
   function createRecognition(): SpeechRecognitionInstance | null {
@@ -367,32 +574,79 @@ export default function Home() {
           </div>
         </div>
         <div className={s.sidebarSessions}>
-          {topic && (
+          {!sessionsLoaded ? (
+            <div className={s.sidebarLoading}>Loading sessions...</div>
+          ) : savedSessions.length === 0 && !topic ? (
+            <div className={s.sidebarEmpty}>No interviews yet. Start one below.</div>
+          ) : (
             <>
-              <div className={s.sectionLabel}>Active</div>
-              <div className={s.sessionItem}>
-                <div className={s.sessionIcon}>🎤</div>
-                <div style={{ minWidth: 0 }}>
-                  <div className={s.sessionName}>{topic}</div>
-                  <div className={s.sessionMeta}>In progress</div>
-                </div>
-              </div>
+              {/* Active session (if any) */}
+              {sessionId && (
+                <>
+                  <div className={s.sectionLabel}>Current</div>
+                  <div className={`${s.sessionItem} ${s.sessionItemActive}`}>
+                    <div className={s.sessionIcon}>🎤</div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className={s.sessionName}>{topic}</div>
+                      <div className={s.sessionMeta}>
+                        {appState === "complete" ? "Complete" : `${completedCount}/20 answers`}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Saved sessions */}
+              {savedSessions.filter((ss) => ss.id !== sessionId).length > 0 && (
+                <>
+                  <div className={s.sectionLabel}>Saved Sessions</div>
+                  {savedSessions.filter((ss) => ss.id !== sessionId).map((ss) => (
+                    <div key={ss.id} className={s.sessionItem}>
+                      <div className={s.sessionIcon}>{ss.status === "complete" ? "✅" : "🎤"}</div>
+                      <div
+                        style={{ minWidth: 0, flex: 1, cursor: "pointer" }}
+                        onClick={() => loadSession(ss.id)}
+                      >
+                        <div className={s.sessionName}>{ss.topic}</div>
+                        <div className={s.sessionMeta}>
+                          {ss.answer_count}/20 · {formatDate(ss.updated_at)}
+                        </div>
+                      </div>
+                      <div className={s.sessionActions}>
+                        {ss.answer_count > 0 && (
+                          <button
+                            className={s.sessionActionBtn}
+                            onClick={(e) => { e.stopPropagation(); exportSessionCSV(ss.id, ss.topic); }}
+                            title="Download CSV"
+                          >📥</button>
+                        )}
+                        <button
+                          className={`${s.sessionActionBtn} ${s.sessionActionBtnDanger}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`Delete "${ss.topic}"? This can't be undone.`)) deleteSession(ss.id);
+                          }}
+                          title="Delete session"
+                        >🗑</button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
             </>
           )}
         </div>
         <div className={s.sidebarFooter}>
           <button className={s.newSessionBtn} onClick={() => {
-            if (completedCount > 0 && !confirm("Start a new interview? Current progress will be lost.")) return;
-            setAppState("topic-entry"); setTopic(""); setMessages([]); setCompletedAnswers([]);
-            setTweakedQuestions([]); setCurrentQuestion(0); setCurrentWordsmith(""); setCurrentSoundbite("");
-            setStreak(0); setBestStreak(0); setFirstTakeCount(0); setRefinementCount(0);
+            if (completedCount > 0 && !confirm("Start a new interview? You can come back to the current one from the sidebar.")) return;
+            resetToNew();
+            setSidebarOpen(false);
           }}>+ New Interview</button>
         </div>
       </aside>
 
       {/* Main Chat Area */}
       <div className={s.main}>
-        {/* Top bar with progress */}
         <div className={s.topbar}>
           <button className={s.menuBtn} onClick={() => setSidebarOpen(true)}>☰</button>
           <div className={s.topbarAvatar}>🎤</div>
@@ -405,23 +659,20 @@ export default function Home() {
                 : currentBlockName}
             </div>
           </div>
-          {/* Streak badge */}
           {streak >= 2 && appState === "interviewing" && (
             <div className={s.streakBadge}>🔥 {streak}</div>
           )}
           {completedCount > 0 && (
-            <button className={s.csvBadge} onClick={exportCSV}>📥 CSV</button>
+            <button className={s.csvBadge} onClick={() => exportCSV()}>📥 CSV</button>
           )}
         </div>
 
-        {/* Progress bar */}
         {appState !== "topic-entry" && (
           <div className={s.progressBarTrack}>
             <div className={s.progressBarFill} style={{ width: `${progressPercent}%` }} />
           </div>
         )}
 
-        {/* Chat messages */}
         <div className={s.chatArea}>
           {appState === "topic-entry" && messages.length === 0 && (
             <div className={s.welcome}>
@@ -527,11 +778,10 @@ export default function Home() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Input area */}
         <div className={s.inputArea}>
           {appState === "complete" ? (
             <div className={s.completeActions}>
-              <button className={s.downloadBtn} onClick={exportCSV}>📥 Download CSV</button>
+              <button className={s.downloadBtn} onClick={() => exportCSV()}>📥 Download CSV</button>
               <div className={s.finalStats}>
                 <div className={s.statItem}>
                   <span className={s.statValue}>{firstTakeCount}</span>
@@ -576,14 +826,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Right Panel — Progress Ring (no question list) */}
+      {/* Right Panel */}
       <aside className={s.rightPanel}>
         <div className={s.rpHeader}>
           <div className={s.rpTitle}>Progress</div>
         </div>
-
         <div className={s.rpBody}>
-          {/* SVG Progress Ring */}
           <div className={s.ringContainer}>
             <svg viewBox="0 0 120 120" className={s.ringSvg}>
               <defs>
@@ -607,8 +855,6 @@ export default function Home() {
               <div className={s.ringBlockName}>{appState === "complete" ? "Done!" : currentBlockName}</div>
             </div>
           </div>
-
-          {/* Stats */}
           <div className={s.rpStats}>
             <div className={s.rpStatRow}>
               <span className={s.rpStatIcon}>✅</span>
@@ -631,8 +877,6 @@ export default function Home() {
               <span className={s.rpStatVal}>{firstTakeCount}/{completedCount || 0}</span>
             </div>
           </div>
-
-          {/* Block progress */}
           <div className={s.rpBlocks}>
             <div className={s.rpBlocksTitle}>Blocks</div>
             {BLOCKS.map((block, i) => {
@@ -656,9 +900,8 @@ export default function Home() {
             })}
           </div>
         </div>
-
         <div className={s.rpFooter}>
-          <button className={s.exportBtn} onClick={exportCSV} disabled={completedCount === 0}>
+          <button className={s.exportBtn} onClick={() => exportCSV()} disabled={completedCount === 0}>
             {completedCount < 20 ? "🔒 Export CSV" : "📥 Export CSV"}
           </button>
         </div>
