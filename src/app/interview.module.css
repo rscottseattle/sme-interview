@@ -689,6 +689,7 @@
   }
 }
 
+/* ========== COMPLETE STATE ========== */
 .downloadBtn {
   width: 100%;
   padding: 14px;
@@ -707,7 +708,131 @@
   filter: brightness(1.1);
 }
 
-/* ========== RIGHT PANEL ========== */
+.completeActions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.finalStats {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+}
+
+.statItem {
+  text-align: center;
+}
+
+.statValue {
+  display: block;
+  font-size: 22px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #7612fa, #ff6221);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: var(--ll-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ========== PROGRESS BAR (Top) ========== */
+.progressBarTrack {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.progressBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7612fa, #c109af, #ff6221);
+  transition: width 0.6s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+/* ========== STREAK BADGE ========== */
+.streakBadge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(234, 179, 8, 0.15);
+  color: #eab308;
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  animation: streakPop 0.3s ease;
+  flex-shrink: 0;
+}
+
+@keyframes streakPop {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ========== MILESTONE CARD ========== */
+.milestoneCard {
+  align-self: center;
+  max-width: 400px;
+  width: 100%;
+  padding: 20px 24px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(118, 18, 250, 0.12), rgba(255, 98, 33, 0.08));
+  border: 1px solid rgba(118, 18, 250, 0.25);
+  margin: 20px 0;
+  text-align: center;
+  animation: milestoneIn 0.5s ease;
+}
+
+.milestoneTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.milestoneMsg {
+  font-size: 13px;
+  color: var(--ll-text-secondary);
+  line-height: 1.5;
+}
+
+@keyframes milestoneIn {
+  0% { transform: scale(0.9) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* ========== WORD COUNT BUBBLE ========== */
+.wordCountBubble {
+  align-self: center;
+  font-size: 11px;
+  color: var(--ll-text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 14px;
+  border-radius: 20px;
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  animation: fadeUp 0.25s ease;
+}
+
+.wordCountLabel {
+  color: var(--ll-text-secondary);
+  font-weight: 600;
+}
+
+.wordCountArrow {
+  color: #7612fa;
+  margin: 0 4px;
+  font-weight: 700;
+}
+
+/* ========== RIGHT PANEL (Gamified) ========== */
 .rightPanel {
   display: none;
   width: 280px;
@@ -732,102 +857,167 @@
   font-size: 14px;
   font-weight: 700;
   color: #fff;
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
-.progressRing {
+.rpBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.ringVisual {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+/* SVG Ring */
+.ringContainer {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  margin: 0 auto;
+}
+
+.ringSvg {
+  width: 100%;
+  height: 100%;
+}
+
+.ringCenter {
+  position: absolute;
+  inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+}
+
+.ringPercent {
+  font-size: 28px;
   font-weight: 800;
-  color: #a78bfa;
+  background: linear-gradient(135deg, #7612fa, #ff6221);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.ringBlockName {
+  font-size: 10px;
+  color: var(--ll-text-muted);
+  text-align: center;
+  max-width: 90px;
+  line-height: 1.3;
+}
+
+/* Stats */
+.rpStats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rpStatRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rpStatIcon {
+  font-size: 14px;
   flex-shrink: 0;
 }
 
-.ringLabel {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ll-text);
-}
-
-.ringSub {
-  font-size: 11px;
-  color: var(--ll-text-muted);
-}
-
-.rpQuestions {
+.rpStatText {
   flex: 1;
-  overflow-y: auto;
-  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--ll-text-secondary);
 }
 
-.rpBlockLabel {
-  padding: 14px 8px 6px;
-  font-size: 10px;
+.rpStatVal {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* Block progress */
+.rpBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rpBlocksTitle {
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1.2px;
   color: var(--ll-text-muted);
   font-weight: 700;
 }
 
-.rpQuestion {
+.rpBlockItem {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 10px;
   border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.rpBlockItemActive {
+  background: rgba(118, 18, 250, 0.08);
+}
+
+.rpBlockItemDone {
+  opacity: 0.7;
+}
+
+.rpBlockTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rpBlockIcon {
   font-size: 12px;
-  color: var(--ll-text-muted);
-  cursor: default;
-  transition: background 0.1s;
-  overflow: hidden;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
 }
 
-.rpQuestion:hover {
-  background: rgba(255, 255, 255, 0.03);
+.rpBlockName {
+  font-size: 11px;
+  color: var(--ll-text-secondary);
+  font-weight: 500;
 }
 
-.rpQuestionDone {
-  color: var(--ll-green);
-}
-
-.rpQuestionActive {
+.rpBlockItemActive .rpBlockName {
   color: #fff;
   font-weight: 600;
 }
 
-.rpDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.1);
+.rpBlockItemDone .rpBlockName {
+  color: var(--ll-green);
 }
 
-.rpDotDone {
-  background: var(--ll-green);
-}
-
-.rpDotActive {
-  background: #7612fa;
-  box-shadow: 0 0 8px #7612fa;
-}
-
-.rpQText {
+.rpBlockBar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+  margin-left: 24px;
+}
+
+.rpBlockBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7612fa, #ff6221);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.rpBlockItemDone .rpBlockBarFill {
+  background: var(--ll-green);
 }
 
 .rpFooter {
